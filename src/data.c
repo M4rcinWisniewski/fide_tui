@@ -1,9 +1,16 @@
 #include <curl/curl.h>
+#include <errno.h>
 #include <limits.h>
 #include <minizip/unzip.h>
+#include <stdbool.h>
 #include <stdio.h>
-
+#include <sys/stat.h>
 void unzip_data(const char *zip_file_path, const char *output_dir) {
+  if (mkdir(output_dir, 0755) != 0 && errno != EEXIST) {
+    perror("mkdir");
+    return;
+  }
+
   unzFile zip_file = unzOpen(zip_file_path);
   if (zip_file == NULL) {
     fprintf(stderr, "Cannot open ZIP: %s\n", zip_file_path);
@@ -54,27 +61,47 @@ void unzip_data(const char *zip_file_path, const char *output_dir) {
   }
 
   unzClose(zip_file);
+
+  // Rename inside the output directory
+  char old_path[PATH_MAX], new_path[PATH_MAX];
+  snprintf(old_path, sizeof(old_path), "%s/players_list_foa.txt", output_dir);
+  snprintf(new_path, sizeof(new_path), "%s/ratings.txt", output_dir);
+  rename(old_path, new_path);
+}
+
+bool does_file_exist(char *file_path) {
+  FILE *check_file = fopen(file_path, "r");
+  if (check_file == NULL) {
+    return false;
+  }
+  fclose(check_file);
+  return true;
 }
 
 void get_data() {
-  CURL *curl;
-  FILE *fp;
-  CURLcode res;
-  const char *url = "https://ratings.fide.com/download/players_list.zip";
-  const char *zip_path = "/home/muslie/dev/fide_tui/ratings.zip";
+  if (!does_file_exist("./data/ratings.txt")) {
+    CURL *curl;
+    FILE *fp;
+    CURLcode res;
+    const char *url = "https://ratings.fide.com/download/players_list.zip";
+    const char *zip_path = "/home/muslie/dev/fide_tui/ratings.zip";
+    const char *data_dir = "/home/muslie/dev/fide_tui/data";
 
-  curl = curl_easy_init();
-  if (curl) {
-    fp = fopen(zip_path, "wb");
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-    res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-    fclose(fp);
-  }
+    curl = curl_easy_init();
+    if (curl) {
+      fp = fopen(zip_path, "wb");
+      curl_easy_setopt(curl, CURLOPT_URL, url);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+      res = curl_easy_perform(curl);
+      curl_easy_cleanup(curl);
+      fclose(fp);
+    }
 
-  unzip_data(zip_path, "/home/muslie/dev/fide_tui");
-  if (remove(zip_path) != 0) {
-    perror("Could not delete ZIP");
+    unzip_data(zip_path, data_dir);
+    if (remove(zip_path) != 0) {
+      perror("Could not delete ZIP");
+    }
+  } else {
+    puts("File already downloaded!");
   }
 }
